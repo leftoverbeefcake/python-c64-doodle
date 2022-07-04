@@ -1,11 +1,12 @@
-# edited on HP 6/23/2022
+#!/usr/bin/python3
+
+# edited on Acer 7/3/2022
 """ converts an image file to Commodore 64 Doodle! hi-res 320x200 black & white format"""
 
-# TODO: separate doodle formatter into another thread
-# TODO: timer to see how quickly the Doodle conversion happens
 # TODO: checkbox to stretch image to full width
-# TODO: fix save filename, max 16 chars, lowercase, remove special chars
-# OPTIONAL: save to a .d64 disk
+# TODO: more error checking, file checking
+# TODO: save to a new path (make a new function!)
+# TODO - OPTIONAL: save to existing C64 D64 image
 # https://pypi.org/project/d64/
 # https://style64.org/cbmdisk/documentation/
 
@@ -15,8 +16,14 @@ from tkinter import filedialog as fd
 
 from PIL import Image, ImageTk, ImageFilter
 import numpy as np
+import time
+from pathlib import Path
 
 class App(tk.Tk):
+
+    global newfilename
+    newfilename = ""
+
     def __init__(self):
         super().__init__()
 
@@ -63,38 +70,52 @@ class App(tk.Tk):
             ('All files', '*.*')
         )
 
-        self.filename = fd.askopenfilename(
+        self.thefilepath = fd.askopenfilename(
             title='Open a file',
-            initialdir='/',
             filetypes=self.filetypes
         )
 
-        if not self.filename:
+        if not self.thefilepath:
             pass
         else:
             self.textlog.delete('1.0', tk.END) # clear textbox first
-            self.textlog.insert(tk.END, "Chosen file: " + self.filename + "\n")
+            self.textlog.insert(tk.END, "Chosen file with path: " + self.thefilepath + "\n")
             self.textlog.insert(tk.END, "----------" + "\n")
             self.textlog.see(tk.END)
-
-            self.loadImage(self.filename)
 
             # make sure B&W convert button is enabled
             self.cnvt_bw_button.config(state=tk.NORMAL)
             # make sure doodle convert button is disabled
             self.cnvt_doodle_button.config(state=tk.DISABLED)
 
+            self.loadAndResizeImage(self.thefilepath)
 
-    def loadImage(self, imageToLoad):
-        # open image in RGB mode
+    # TODO: remove special chars in filename
+    #
+    # generate the new file name for saving C64 Doodle format file
+    # C64 file names are max 16 characters, we need 14 in order to add "dd" prefix
+    # dd prefix is needed for the file to load in C64 Doodle! software
+    # convert to lowercase to display properly on the C64
+    def createDoodleFilename(self, theOldFilename):
+        theNewFilename = "dd" + theOldFilename[0:14].lower()
+        return theNewFilename
+
+    def loadAndResizeImage(self, imageToLoad):
+        # open image
         self.im = Image.open(imageToLoad)
+
+        # get base file name
+        thefilename = Path(imageToLoad).stem
+
+        # get new file name for saving
+        self.newfilename = self.createDoodleFilename(thefilename)
 
         # get old image width and height
         old_width = self.im.size[0]
         old_height = self.im.size[1]
 
         # show some stats about the old image
-        self.textlog.insert(tk.END, "Loaded: " + str(imageToLoad) + "\n")
+        self.textlog.insert(tk.END, "Loaded: " + str(thefilename) + "\n")
         self.textlog.insert(tk.END, "Old image width: " + str(old_width) + "\n")
         self.textlog.insert(tk.END, "Old image height: " + str(old_height) + "\n")
         self.textlog.insert(tk.END, "Old format: " + str(self.im.format) + "\n")
@@ -112,8 +133,9 @@ class App(tk.Tk):
         self.ph = ImageTk.PhotoImage(self.ph_new) # turn into PhotoImage before display in a label!
 
         # show new size stats about the old image
-        self.textlog.insert(tk.END, "New image width: " + str( self.ph_new.size[0] ) + "\n" )
-        self.textlog.insert(tk.END, "New image height: " + str( self.ph_new.size[1] ) + "\n" )
+        self.textlog.insert(tk.END, "New image name: " + self.newfilename + "\n" )
+        self.textlog.insert(tk.END, "New converted width: " + str( self.ph_new.size[0] ) + "\n" )
+        self.textlog.insert(tk.END, "New converted height: " + str( self.ph_new.size[1] ) + "\n" )
         self.textlog.insert(tk.END, "----------" + "\n")
         self.textlog.see(tk.END)
 
@@ -157,16 +179,12 @@ class App(tk.Tk):
         # enable doodle convert button
         self.cnvt_doodle_button.config(state=tk.NORMAL)
 
-    def getHex(self, list_to_process):
-        # from a list of 8 elements (each element a 1 or 0) as a byte, turn into hex format
-        power = 7
-        new_hex = 0
-        for x in np.nditer(list_to_process):
-            new_hex = new_hex + ( int(x) * (2**power) ) # change from binary to decimal
-            power = power - 1
-        new_hex = hex(new_hex)
-        new_hex = new_hex[2:]
-        new_hex = new_hex.zfill(2)
+    def getHex(self, arr_to_process):
+        # treat an array of 8 elements (each element a 1 or 0) as a byte, turn into hex format
+        new_hex = np.packbits(arr_to_process) # packs all the elements into a 8-bit decimal 0 to 255
+        new_hex = hex(new_hex[0]) # convert decimal to hex
+        new_hex = new_hex[2:] # slice off what we don't need
+        new_hex = new_hex.zfill(2) # make sure there are 2 hex digits, if not, pad the string with leading zeros
         return new_hex
 
     def convertFileToDoodle(self):
@@ -179,7 +197,7 @@ class App(tk.Tk):
         self.im2_new = ImageTk.getimage(self.disp_lbl.image)
         self.im2_new = self.im2_new.convert("1")
 
-        # convert image data to 2D array (lists of boolean values)
+        # convert image data to 2D array (lists of integer values)
         image_array = np.array(self.im2_new).astype(int) # 2D image array is 200 lines, 320 pixel elements across
 
         # get info about the new array
@@ -207,11 +225,13 @@ class App(tk.Tk):
         xmax = 8
         ymin = 0
         ymax = 8
+        tick = time.perf_counter()
         while block_count < 40:
-            self.textlog.insert(tk.END, "Block count: " + str(block_count) + " -- xmin: " + str(xmin) + " -- xmax: " + str(xmax) + "\n" )
-            self.textlog.see(tk.END)
+            #self.textlog.insert(tk.END, "Block count: " + str(block_count) + " -- xmin: " + str(xmin) + " -- xmax: " + str(xmax) + "\n" )
+            #self.textlog.see(tk.END)
+            self.update_idletasks()
             #print(image_array[ymin:ymax, xmin:xmax])
-            # process each line of the block into hex
+            # process each 8 char line of a block into hex
             for line_item in image_array[ymin:ymax, xmin:xmax]:
                 hex_line = self.getHex(line_item)
                 byte_arr += bytearray.fromhex(hex_line)
@@ -230,11 +250,15 @@ class App(tk.Tk):
                     ymin = ymin + 8
                     ymax = ymax + 8
 
-        self.textlog.insert(tk.END, "Saving C64 Doodle file..." + "\n")
+        tock = time.perf_counter()
+        self.textlog.insert(tk.END, "----------" + "\n")
+        txt = "Created file in {elapsed_time:.2f} seconds.".format( elapsed_time = (tock-tick) )
+        self.textlog.insert(tk.END, txt + "\n")
+        self.textlog.insert(tk.END, "Saving C64 Doodle file: " + self.newfilename + "\n")
         self.textlog.see(tk.END)
 
         # Write bytes to file
-        with open("ddtest", "wb") as binary_file:
+        with open(self.newfilename, "wb") as binary_file:
             binary_file.write(byte_arr)
 
         self.textlog.insert(tk.END, "DONE!!!!!" + "\n")
