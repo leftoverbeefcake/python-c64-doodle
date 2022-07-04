@@ -1,5 +1,4 @@
-from PIL import Image, ImageFilter
-import numpy as np
+# THIS CODE IS OLD AND SLOW! DO NOT USE!!!!!
 
 # edited on Mac - 11/24/2021 5:07pm
 # https://www.geeksforgeeks.org/python-pillow-tutorial/
